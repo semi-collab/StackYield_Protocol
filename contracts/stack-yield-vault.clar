@@ -22,3 +22,9 @@
 (define-data-var emergency-shutdown bool false)
 (define-data-var min-stake-amount uint u1000000) ;; Minimum stake in µSTX
 (define-data-var max-pool-size uint u1000000000000) ;; Maximum pool size in µSTX
+
+;; Protocol statistics
+(define-data-var total-protocol-fees uint u0)
+(define-data-var total-unique-stakers uint u0)
+(define-data-var total-tvl uint u0)
+(define-data-var last-rebalance-height uint u0)
