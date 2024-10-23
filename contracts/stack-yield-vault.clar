@@ -254,3 +254,43 @@
         )
     )
 )
+
+;; Claim rewards function with safety checks
+(define-public (claim-rewards (pool-id uint))
+    (let (
+        (position (unwrap! (map-get? user-positions { user: tx-sender, pool-id: pool-id }) ERR-NO-POSITION))
+        (rewards (unwrap! (calculate-rewards tx-sender pool-id) ERR-NO-REWARDS))
+    )
+        (asserts! (not (var-get emergency-shutdown)) ERR-EMERGENCY-SHUTDOWN)
+        (asserts! (> rewards u0) ERR-NO-REWARDS)
+        
+        ;; Calculate protocol fee
+        (let (
+            (fee (/ (* rewards (var-get protocol-fee-rate)) u10000))
+            (net-rewards (- rewards fee))
+        )
+            ;; Transfer rewards
+            (try! (as-contract (stx-transfer? net-rewards tx-sender tx-sender)))
+            (var-set total-protocol-fees (+ (var-get total-protocol-fees) fee))
+            
+            ;; Update user position
+            (map-set user-positions
+                { user: tx-sender, pool-id: pool-id }
+                (merge position {
+                    pending-rewards: u0,
+                    last-claim-height: block-height
+                })
+            )
+            
+            ;; Update pool statistics
+            (map-set pools
+                { pool-id: pool-id }
+                (merge (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND)
+                    { total-rewards-distributed: (+ (get total-rewards-distributed (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND)) rewards) }
+                )
+            )
+            
+            (ok rewards)
+        )
+    )
+)
