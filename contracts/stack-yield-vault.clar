@@ -20,8 +20,8 @@
 (define-data-var contract-owner principal tx-sender)
 (define-data-var protocol-fee-rate uint u50) ;; 0.5% in basis points
 (define-data-var emergency-shutdown bool false)
-(define-data-var min-stake-amount uint u1000000) ;; Minimum stake in µSTX
-(define-data-var max-pool-size uint u1000000000000) ;; Maximum pool size in µSTX
+(define-data-var min-stake-amount uint u1000000) ;; Minimum stake in uSTX
+(define-data-var max-pool-size uint u1000000000000) ;; Maximum pool size in uSTX
 
 ;; Protocol statistics
 (define-data-var total-protocol-fees uint u0)
