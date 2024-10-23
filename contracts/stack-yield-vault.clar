@@ -487,6 +487,14 @@
     )
 )
 
+;; Custom absolute value function
+(define-read-only (abs (value int))
+    (if (< value 0)
+        (- 0 value)
+        value
+    )
+)
+
 ;; Risk assessment
 (define-read-only (assess-pool-risk (pool-id uint))
     (let (
