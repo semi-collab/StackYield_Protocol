@@ -108,3 +108,60 @@
         (ok true)
     )
 )
+
+
+;; Pool management functions
+(define-public (create-pool-type 
+    (type-id uint) 
+    (name (string-ascii 64))
+    (risk-level uint)
+    (min-lock uint)
+    (max-lock uint)
+    (base-apy uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (<= risk-level u10) ERR-INVALID-PARAMETER)
+        (asserts! (< min-lock max-lock) ERR-INVALID-PARAMETER)
+        (asserts! (<= base-apy u10000) ERR-INVALID-PARAMETER) ;; Max 100% APY
+        
+        (map-set pool-types
+            { type-id: type-id }
+            {
+                name: name,
+                risk-level: risk-level,
+                min-lock-period: min-lock,
+                max-lock-period: max-lock,
+                base-apy: base-apy,
+                is-active: true
+            }
+        )
+        (ok true)
+    )
+)
+
+(define-public (create-pool 
+    (pool-id uint) 
+    (type-id uint)
+    (strategy-params (list 10 uint)))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (is-some (map-get? pool-types { type-id: type-id })) ERR-INVALID-PARAMETER)
+        
+        (let ((pool-type (unwrap! (map-get? pool-types { type-id: type-id }) ERR-INVALID-PARAMETER)))
+            (map-set pools
+                { pool-id: pool-id }
+                {
+                    type-id: type-id,
+                    current-apy: (get base-apy pool-type),
+                    total-staked: u0,
+                    staker-count: u0,
+                    is-active: true,
+                    last-update-height: block-height,
+                    total-rewards-distributed: u0,
+                    strategy-params: strategy-params
+                }
+            )
+            (ok true)
+        )
+    )
+)
