@@ -28,3 +28,16 @@
 (define-data-var total-unique-stakers uint u0)
 (define-data-var total-tvl uint u0)
 (define-data-var last-rebalance-height uint u0)
+
+;; Pool types and strategies
+(define-map pool-types 
+    { type-id: uint }
+    {
+        name: (string-ascii 64),
+        risk-level: uint,
+        min-lock-period: uint,
+        max-lock-period: uint,
+        base-apy: uint,
+        is-active: bool
+    }
+)
