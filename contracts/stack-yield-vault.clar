@@ -16,6 +16,13 @@
 (define-constant ERR-INVALID-PARAMETER (err u111))
 (define-constant ERR-POOL-INACTIVE (err u112))
 
+;; Constants for validation
+(define-constant MAX-POOL-ID u1000)
+(define-constant MAX-TYPE-ID u100)
+(define-constant MAX-STRATEGY-PARAM u1000000000) ;; 1 billion
+(define-constant MAX-LOCK-BLOCKS u525600) ;; ~1 year in blocks
+(define-constant MAX-NAME-LENGTH u64)
+
 ;; Contract owner and governance
 (define-data-var contract-owner principal tx-sender)
 (define-data-var protocol-fee-rate uint u50) ;; 0.5% in basis points
@@ -28,26 +35,6 @@
 (define-data-var total-unique-stakers uint u0)
 (define-data-var total-tvl uint u0)
 (define-data-var last-rebalance-height uint u0)
-
-;; Add these constants for strategy parameter validation
-(define-constant MAX-STRATEGY-PARAM u1000000) ;; Maximum value for any strategy parameter
-(define-constant MIN-STRATEGY-PARAM u0) ;; Minimum value for any strategy parameter
-
-;; Helper function to validate strategy parameters
-(define-private (check-strategy-param (param uint) (valid bool))
-    (and 
-        valid
-        (and 
-            (>= param MIN-STRATEGY-PARAM)
-            (<= param MAX-STRATEGY-PARAM)
-        )
-    )
-)
-
-;; Add the missing check-strategy-params function
-(define-private (check-strategy-params (params (list 10 uint)))
-    (fold check-strategy-param params true)
-)
 
 ;; Pool types and strategies
 (define-map pool-types 
@@ -103,24 +90,53 @@
     }
 )
 
-;; Define additional constants for validation
-(define-constant ERR-INVALID-POOL-ID (err u113))
-(define-constant ERR-INVALID-TYPE-ID (err u114))
-(define-constant MAX-POOL-ID u1000)
-(define-constant MAX-TYPE-ID u100)
+;; Validation functions
+(define-private (validate-pool-id (pool-id uint))
+    (< pool-id MAX-POOL-ID)
+)
 
-;; Governance and admin functions with validation - Keep only this version
+(define-private (validate-type-id (type-id uint))
+    (< type-id MAX-TYPE-ID)
+)
+
+;; Helper function to fold over strategy params
+(define-private (check-params (prev-valid bool) (param uint))
+    (and prev-valid (validate-strategy-param param))
+)
+
+(define-private (validate-strategy-params (params (list 10 uint)))
+    (fold check-params params true)
+)
+
+(define-private (validate-strategy-param (param uint))
+    (< param MAX-STRATEGY-PARAM)
+)
+
+(define-private (validate-name (name (string-ascii 64)))
+    (<= (len name) MAX-NAME-LENGTH)
+)
+
+(define-private (validate-strategy-params (params (list 10 uint)))
+    (fold and true (map validate-strategy-param params))
+)
+
+(define-private (validate-strategy-param (param uint))
+    (< param MAX-STRATEGY-PARAM)
+)
+
+(define-private (validate-name (name (string-ascii 64)))
+    (<= (len name) MAX-NAME-LENGTH)
+)
+
+;; Governance and admin functions
 (define-public (set-contract-owner (new-owner principal))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-        ;; Add check to prevent setting to zero address equivalent
-        (asserts! (not (is-eq new-owner 'SP000000000000000000002Q6VF78)) ERR-INVALID-PARAMETER)
+        (asserts! (not (is-eq new-owner tx-sender)) ERR-INVALID-PARAMETER) ;; Can't set to current owner
         (var-set contract-owner new-owner)
         (ok true)
     )
 )
-
-
 
 (define-public (set-protocol-fee (new-fee uint))
     (begin
@@ -139,7 +155,7 @@
     )
 )
 
-;; Pool management functions with enhanced validation
+;; Pool management functions
 (define-public (create-pool-type 
     (type-id uint) 
     (name (string-ascii 64))
@@ -149,15 +165,12 @@
     (base-apy uint))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-        ;; Add validation for type-id
-        (asserts! (< type-id MAX-TYPE-ID) ERR-INVALID-TYPE-ID)
-        ;; Validate that type doesn't already exist
-        (asserts! (is-none (map-get? pool-types { type-id: type-id })) ERR-INVALID-PARAMETER)
+        (asserts! (validate-type-id type-id) ERR-INVALID-PARAMETER)
+        (asserts! (validate-name name) ERR-INVALID-PARAMETER)
         (asserts! (<= risk-level u10) ERR-INVALID-PARAMETER)
         (asserts! (< min-lock max-lock) ERR-INVALID-PARAMETER)
-        (asserts! (<= base-apy u10000) ERR-INVALID-PARAMETER) ;; Max 100% APY
-        ;; Validate name is not empty
-        (asserts! (> (len name) u0) ERR-INVALID-PARAMETER)
+        (asserts! (<= max-lock MAX-LOCK-BLOCKS) ERR-INVALID-PARAMETER)
+        (asserts! (<= base-apy u10000) ERR-INVALID-PARAMETER)
         
         (map-set pool-types
             { type-id: type-id }
@@ -180,14 +193,10 @@
     (strategy-params (list 10 uint)))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-        ;; Add validation for pool-id
-        (asserts! (< pool-id MAX-POOL-ID) ERR-INVALID-POOL-ID)
-        ;; Validate that pool doesn't already exist
-        (asserts! (is-none (map-get? pools { pool-id: pool-id })) ERR-INVALID-PARAMETER)
-        ;; Validate type-id exists
-        (asserts! (is-some (map-get? pool-types { type-id: type-id })) ERR-INVALID-TYPE-ID)
-        ;; Validate strategy-params are within acceptable ranges
-        (asserts! (fold check-strategy-params strategy-params true) ERR-INVALID-PARAMETER)
+        (asserts! (validate-pool-id pool-id) ERR-INVALID-PARAMETER)
+        (asserts! (validate-type-id type-id) ERR-INVALID-PARAMETER)
+        (asserts! (validate-strategy-params strategy-params) ERR-INVALID-PARAMETER)
+        (asserts! (is-some (map-get? pool-types { type-id: type-id })) ERR-INVALID-PARAMETER)
         
         (let ((pool-type (unwrap! (map-get? pool-types { type-id: type-id }) ERR-INVALID-PARAMETER)))
             (map-set pools
@@ -210,32 +219,37 @@
 
 ;; Staking functions
 (define-public (stake (pool-id uint) (amount uint) (lock-blocks uint))
-    (let (
-        (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
-        (pool-type (unwrap! (map-get? pool-types { type-id: (get type-id pool) }) ERR-POOL-NOT-FOUND))
-        (current-position (default-to 
-            {
-                staked-amount: u0,
-                pending-rewards: u0,
-                stake-height: block-height,
-                lock-until: u0,
-                last-claim-height: block-height,
-                boost-multiplier: u100,
-                compound-rewards: false
-            }
-            (map-get? user-positions { user: tx-sender, pool-id: pool-id })))
-    )
-        (asserts! (not (var-get emergency-shutdown)) ERR-EMERGENCY-SHUTDOWN)
-        (asserts! (get is-active pool) ERR-POOL-INACTIVE)
-        (asserts! (>= amount (var-get min-stake-amount)) ERR-INVALID-AMOUNT)
-        (asserts! (<= (+ (get total-staked pool) amount) (var-get max-pool-size)) ERR-POOL-FULL)
-        (asserts! 
-            (and 
-                (>= lock-blocks (get min-lock-period pool-type))
-                (<= lock-blocks (get max-lock-period pool-type))
-            )
-            ERR-LOCK-PERIOD-INVALID
+    (begin
+        (asserts! (validate-pool-id pool-id) ERR-INVALID-PARAMETER)
+        (asserts! (<= lock-blocks MAX-LOCK-BLOCKS) ERR-INVALID-PARAMETER)
+        
+        (let (
+            (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+            (pool-type (unwrap! (map-get? pool-types { type-id: (get type-id pool) }) ERR-POOL-NOT-FOUND))
+            (current-position (default-to 
+                {
+                    staked-amount: u0,
+                    pending-rewards: u0,
+                    stake-height: block-height,
+                    lock-until: u0,
+                    last-claim-height: block-height,
+                    boost-multiplier: u100,
+                    compound-rewards: false
+                }
+                (map-get? user-positions { user: tx-sender, pool-id: pool-id })))
         )
+            (asserts! (not (var-get emergency-shutdown)) ERR-EMERGENCY-SHUTDOWN)
+            (asserts! (get is-active pool) ERR-POOL-INACTIVE)
+            (asserts! (>= amount (var-get min-stake-amount)) ERR-INVALID-AMOUNT)
+            (asserts! (<= (+ (get total-staked pool) amount) (var-get max-pool-size)) ERR-POOL-FULL)
+            (asserts! 
+                (and 
+                    (>= lock-blocks (get min-lock-period pool-type))
+                    (<= lock-blocks (get max-lock-period pool-type))
+                )
+                ERR-LOCK-PERIOD-INVALID
+            )
+		)
         
         ;; Transfer STX to contract
         (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
@@ -468,6 +482,8 @@
 (define-public (record-metrics (pool-id uint))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (validate-pool-id pool-id) ERR-INVALID-PARAMETER)
+        
         (let (
             (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
         )
@@ -492,7 +508,7 @@
 )
 
 ;; User performance analysis
-(define-read-only (analyze-user-performance (user principal) (pool-id uint))
+(define-read-only (analyze-user-performance (user principal-of) (pool-id uint))
     (let (
         (position (unwrap! (map-get? user-positions { user: user, pool-id: pool-id }) ERR-NO-POSITION))
         (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
@@ -530,26 +546,28 @@
     )
 )
 
-;; Risk assessment with uint-based calculations
+
+;; Define a private absolute value function
+(define-private (get-absolute-value (n int))
+    (if (< n 0)
+        (* n -1)
+        n)
+)
+
+;; Updated risk assessment function
 (define-read-only (assess-pool-risk (pool-id uint))
     (let (
         (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
         (pool-type (unwrap! (map-get? pool-types { type-id: (get type-id pool) }) ERR-POOL-NOT-FOUND))
+        (apy-diff (- (get current-apy pool) (get base-apy pool-type)))
     )
-        ;; Calculate APY volatility using uint math
-        (let (
-            (current-apy (get current-apy pool))
-            (base-apy (get base-apy pool-type))
-            (apy-diff (if (> current-apy base-apy)
-                (- current-apy base-apy)
-                (- base-apy current-apy)))
-        )
-            (ok {
-                base-risk: (get risk-level pool-type),
-                utilization-risk: (/ (* (get total-staked pool) u100) (var-get max-pool-size)),
-                apy-volatility: apy-diff,
-                recommended-lock-period: (get min-lock-period pool-type)
-            })
-        )
+        (ok {
+            base-risk: (get risk-level pool-type),
+            utilization-risk: (/ (* (get total-staked pool) u100) (var-get max-pool-size)),
+            apy-volatility: (if (< apy-diff 0) 
+                              (to-uint (* apy-diff -1))
+                              (to-uint apy-diff)),
+            recommended-lock-period: (get min-lock-period pool-type)
+        })
     )
 )
