@@ -109,7 +109,6 @@
     )
 )
 
-
 ;; Pool management functions
 (define-public (create-pool-type 
     (type-id uint) 
@@ -322,6 +321,49 @@
     )
 )
 
+;; Unstaking with penalty calculation
+(define-public (unstake (pool-id uint) (amount uint))
+    (let (
+        (position (unwrap! (map-get? user-positions { user: tx-sender, pool-id: pool-id }) ERR-NO-POSITION))
+        (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+    )
+        (asserts! (<= amount (get staked-amount position)) ERR-INSUFFICIENT-BALANCE)
+        (asserts! (>= block-height (get lock-until position)) ERR-STILL-LOCKED)
+        
+        ;; Calculate early withdrawal penalty if applicable
+        (let (
+            (penalty (if (< (- block-height (get stake-height position)) u52560)
+                (/ amount u20) ;; 5% penalty for withdrawals within first year
+                u0))
+            (withdrawal-amount (- amount penalty))
+        )
+            ;; Transfer STX back to user
+            (try! (as-contract (stx-transfer? withdrawal-amount tx-sender tx-sender)))
+            
+            ;; Update user position
+            (map-set user-positions
+                { user: tx-sender, pool-id: pool-id }
+                (merge position {
+                    staked-amount: (- (get staked-amount position) amount)
+                })
+            )
+            
+            ;; Update pool data
+            (map-set pools
+                { pool-id: pool-id }
+                (merge pool {
+                    total-staked: (- (get total-staked pool) amount)
+                })
+            )
+            
+            ;; Update protocol statistics
+            (var-set total-tvl (- (var-get total-tvl) amount))
+            
+            (ok withdrawal-amount)
+        )
+    )
+)
+
 ;; Utility functions for analytics
 
 (define-read-only (get-pool-info (pool-id uint))
@@ -421,6 +463,41 @@
                 (- (get lock-until position) block-height)
                 u0),
             compound-enabled: (get compound-rewards position)
+        })
+    )
+)
+
+;; Pool health check
+(define-read-only (check-pool-health (pool-id uint))
+    (let (
+        (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+        (utilization-rate (/ (* (get total-staked pool) u10000) (var-get max-pool-size)))
+    )
+        (ok {
+            is-active: (get is-active pool),
+            utilization-rate: utilization-rate,
+            needs-rebalance: (> (- block-height (get last-update-height pool)) u1440),
+            total-stakers: (get staker-count pool),
+            health-status: (if (> utilization-rate u9500)
+                "critical"
+                (if (> utilization-rate u8000)
+                    "warning"
+                    "healthy"))
+        })
+    )
+)
+
+;; Risk assessment
+(define-read-only (assess-pool-risk (pool-id uint))
+    (let (
+        (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+        (pool-type (unwrap! (map-get? pool-types { type-id: (get type-id pool) }) ERR-POOL-NOT-FOUND))
+    )
+        (ok {
+            base-risk: (get risk-level pool-type),
+            utilization-risk: (/ (* (get total-staked pool) u100) (var-get max-pool-size)),
+            apy-volatility: (abs (- (get current-apy pool) (get base-apy pool-type))),
+            recommended-lock-period: (get min-lock-period pool-type)
         })
     )
 )
