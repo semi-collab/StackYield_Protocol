@@ -70,3 +70,15 @@
         compound-rewards: bool
     }
 )
+
+;; User statistics
+(define-map user-stats
+    { user: principal }
+    {
+        total-staked: uint,
+        total-claimed-rewards: uint,
+        pools-participated: uint,
+        first-stake-height: uint,
+        last-action-height: uint
+    }
+)
