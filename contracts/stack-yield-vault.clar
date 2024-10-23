@@ -368,3 +368,59 @@
         (ok (/ (* (get current-apy pool) (get boost-multiplier position)) u100))
     )
 )
+
+;; Get historical performance metrics
+(define-map historical-metrics
+    { pool-id: uint, height: uint }
+    {
+        tvl: uint,
+        apy: uint,
+        staker-count: uint,
+        rewards-distributed: uint
+    }
+)
+
+(define-public (record-metrics (pool-id uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (let (
+            (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+        )
+            (map-set historical-metrics
+                { pool-id: pool-id, height: block-height }
+                {
+                    tvl: (get total-staked pool),
+                    apy: (get current-apy pool),
+                    staker-count: (get staker-count pool),
+                    rewards-distributed: (get total-rewards-distributed pool)
+                }
+            )
+            (ok true)
+        )
+    )
+)
+
+(define-read-only (get-historical-metrics (pool-id uint) (height uint))
+    (ok (unwrap! 
+        (map-get? historical-metrics { pool-id: pool-id, height: height })
+        ERR-POOL-NOT-FOUND))
+)
+
+;; User performance analysis
+(define-read-only (analyze-user-performance (user principal) (pool-id uint))
+    (let (
+        (position (unwrap! (map-get? user-positions { user: user, pool-id: pool-id }) ERR-NO-POSITION))
+        (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+        (blocks-staked (- block-height (get stake-height position)))
+    )
+        (ok {
+            staked-amount: (get staked-amount position),
+            time-in-pool: blocks-staked,
+            effective-apy: (/ (* (get current-apy pool) (get boost-multiplier position)) u100),
+            lock-remaining: (if (> (get lock-until position) block-height)
+                (- (get lock-until position) block-height)
+                u0),
+            compound-enabled: (get compound-rewards position)
+        })
+    )
+)
