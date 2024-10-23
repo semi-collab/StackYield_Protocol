@@ -321,3 +321,40 @@
         )
     )
 )
+
+;; Utility functions for analytics
+
+(define-read-only (get-pool-info (pool-id uint))
+    (ok (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+)
+
+(define-read-only (get-pool-type-info (type-id uint))
+    (ok (unwrap! (map-get? pool-types { type-id: type-id }) ERR-POOL-NOT-FOUND))
+)
+
+(define-read-only (get-user-position (user principal) (pool-id uint))
+    (ok (unwrap! (map-get? user-positions { user: user, pool-id: pool-id }) ERR-NO-POSITION))
+)
+
+(define-read-only (get-user-stats (user principal))
+    (ok (default-to
+        {
+            total-staked: u0,
+            total-claimed-rewards: u0,
+            pools-participated: u0,
+            first-stake-height: u0,
+            last-action-height: u0
+        }
+        (map-get? user-stats { user: user })))
+)
+
+(define-read-only (get-protocol-stats)
+    (ok {
+        total-tvl: (var-get total-tvl),
+        total-protocol-fees: (var-get total-protocol-fees),
+        total-unique-stakers: (var-get total-unique-stakers),
+        last-rebalance-height: (var-get last-rebalance-height),
+        emergency-shutdown: (var-get emergency-shutdown),
+        protocol-fee-rate: (var-get protocol-fee-rate)
+    })
+)
