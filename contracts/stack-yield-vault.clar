@@ -29,6 +29,26 @@
 (define-data-var total-tvl uint u0)
 (define-data-var last-rebalance-height uint u0)
 
+;; Add these constants for strategy parameter validation
+(define-constant MAX-STRATEGY-PARAM u1000000) ;; Maximum value for any strategy parameter
+(define-constant MIN-STRATEGY-PARAM u0) ;; Minimum value for any strategy parameter
+
+;; Helper function to validate strategy parameters
+(define-private (check-strategy-param (param uint) (valid bool))
+    (and 
+        valid
+        (and 
+            (>= param MIN-STRATEGY-PARAM)
+            (<= param MAX-STRATEGY-PARAM)
+        )
+    )
+)
+
+;; Add the missing check-strategy-params function
+(define-private (check-strategy-params (params (list 10 uint)))
+    (fold check-strategy-param params true)
+)
+
 ;; Pool types and strategies
 (define-map pool-types 
     { type-id: uint }
@@ -83,14 +103,24 @@
     }
 )
 
-;; Governance and admin functions
+;; Define additional constants for validation
+(define-constant ERR-INVALID-POOL-ID (err u113))
+(define-constant ERR-INVALID-TYPE-ID (err u114))
+(define-constant MAX-POOL-ID u1000)
+(define-constant MAX-TYPE-ID u100)
+
+;; Governance and admin functions with validation - Keep only this version
 (define-public (set-contract-owner (new-owner principal))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        ;; Add check to prevent setting to zero address equivalent
+        (asserts! (not (is-eq new-owner 'SP000000000000000000002Q6VF78)) ERR-INVALID-PARAMETER)
         (var-set contract-owner new-owner)
         (ok true)
     )
 )
+
+
 
 (define-public (set-protocol-fee (new-fee uint))
     (begin
@@ -109,7 +139,7 @@
     )
 )
 
-;; Pool management functions
+;; Pool management functions with enhanced validation
 (define-public (create-pool-type 
     (type-id uint) 
     (name (string-ascii 64))
@@ -119,9 +149,15 @@
     (base-apy uint))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        ;; Add validation for type-id
+        (asserts! (< type-id MAX-TYPE-ID) ERR-INVALID-TYPE-ID)
+        ;; Validate that type doesn't already exist
+        (asserts! (is-none (map-get? pool-types { type-id: type-id })) ERR-INVALID-PARAMETER)
         (asserts! (<= risk-level u10) ERR-INVALID-PARAMETER)
         (asserts! (< min-lock max-lock) ERR-INVALID-PARAMETER)
         (asserts! (<= base-apy u10000) ERR-INVALID-PARAMETER) ;; Max 100% APY
+        ;; Validate name is not empty
+        (asserts! (> (len name) u0) ERR-INVALID-PARAMETER)
         
         (map-set pool-types
             { type-id: type-id }
@@ -144,7 +180,14 @@
     (strategy-params (list 10 uint)))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
-        (asserts! (is-some (map-get? pool-types { type-id: type-id })) ERR-INVALID-PARAMETER)
+        ;; Add validation for pool-id
+        (asserts! (< pool-id MAX-POOL-ID) ERR-INVALID-POOL-ID)
+        ;; Validate that pool doesn't already exist
+        (asserts! (is-none (map-get? pools { pool-id: pool-id })) ERR-INVALID-PARAMETER)
+        ;; Validate type-id exists
+        (asserts! (is-some (map-get? pool-types { type-id: type-id })) ERR-INVALID-TYPE-ID)
+        ;; Validate strategy-params are within acceptable ranges
+        (asserts! (fold check-strategy-params strategy-params true) ERR-INVALID-PARAMETER)
         
         (let ((pool-type (unwrap! (map-get? pool-types { type-id: type-id }) ERR-INVALID-PARAMETER)))
             (map-set pools
