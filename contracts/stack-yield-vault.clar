@@ -165,3 +165,72 @@
         )
     )
 )
+
+;; Staking functions
+(define-public (stake (pool-id uint) (amount uint) (lock-blocks uint))
+    (let (
+        (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+        (pool-type (unwrap! (map-get? pool-types { type-id: (get type-id pool) }) ERR-POOL-NOT-FOUND))
+        (current-position (default-to 
+            {
+                staked-amount: u0,
+                pending-rewards: u0,
+                stake-height: block-height,
+                lock-until: u0,
+                last-claim-height: block-height,
+                boost-multiplier: u100,
+                compound-rewards: false
+            }
+            (map-get? user-positions { user: tx-sender, pool-id: pool-id })))
+    )
+        (asserts! (not (var-get emergency-shutdown)) ERR-EMERGENCY-SHUTDOWN)
+        (asserts! (get is-active pool) ERR-POOL-INACTIVE)
+        (asserts! (>= amount (var-get min-stake-amount)) ERR-INVALID-AMOUNT)
+        (asserts! (<= (+ (get total-staked pool) amount) (var-get max-pool-size)) ERR-POOL-FULL)
+        (asserts! 
+            (and 
+                (>= lock-blocks (get min-lock-period pool-type))
+                (<= lock-blocks (get max-lock-period pool-type))
+            )
+            ERR-LOCK-PERIOD-INVALID
+        )
+        
+        ;; Transfer STX to contract
+        (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+        
+        ;; Calculate boost multiplier based on lock period
+        (let (
+            (boost-multiplier (+ u100 (/ (* lock-blocks u100) (get max-lock-period pool-type))))
+        )
+            ;; Update user position
+            (map-set user-positions
+                { user: tx-sender, pool-id: pool-id }
+                {
+                    staked-amount: (+ (get staked-amount current-position) amount),
+                    pending-rewards: (get pending-rewards current-position),
+                    stake-height: block-height,
+                    lock-until: (+ block-height lock-blocks),
+                    last-claim-height: block-height,
+                    boost-multiplier: boost-multiplier,
+                    compound-rewards: (get compound-rewards current-position)
+                }
+            )
+            
+            ;; Update pool data
+            (map-set pools
+                { pool-id: pool-id }
+                (merge pool {
+                    total-staked: (+ (get total-staked pool) amount),
+                    staker-count: (if (is-eq (get staked-amount current-position) u0)
+                        (+ (get staker-count pool) u1)
+                        (get staker-count pool))
+                })
+            )
+            
+            ;; Update protocol statistics
+            (var-set total-tvl (+ (var-get total-tvl) amount))
+            
+            (ok true)
+        )
+    )
+)
