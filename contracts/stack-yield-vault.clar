@@ -358,3 +358,13 @@
         protocol-fee-rate: (var-get protocol-fee-rate)
     })
 )
+
+;; Calculate effective APY for a user's position
+(define-read-only (calculate-effective-apy (user principal) (pool-id uint))
+    (let (
+        (position (unwrap! (map-get? user-positions { user: user, pool-id: pool-id }) ERR-NO-POSITION))
+        (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+    )
+        (ok (/ (* (get current-apy pool) (get boost-multiplier position)) u100))
+    )
+)
