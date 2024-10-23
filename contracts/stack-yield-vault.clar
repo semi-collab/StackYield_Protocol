@@ -504,7 +504,7 @@
         (ok {
             base-risk: (get risk-level pool-type),
             utilization-risk: (/ (* (get total-staked pool) u100) (var-get max-pool-size)),
-            apy-volatility: (abs (- (get current-apy pool) (get base-apy pool-type))),
+            apy-volatility: (abs (int (- (get current-apy pool) (get base-apy pool-type)))),
             recommended-lock-period: (get min-lock-period pool-type)
         })
     )
