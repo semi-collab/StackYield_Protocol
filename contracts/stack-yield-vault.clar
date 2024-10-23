@@ -294,3 +294,30 @@
         )
     )
 )
+
+;; Pool rebalancing mechanism
+(define-private (rebalance-pool (pool-id uint))
+    (let (
+        (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+        (pool-type (unwrap! (map-get? pool-types { type-id: (get type-id pool) }) ERR-POOL-NOT-FOUND))
+        (utilization-rate (/ (* (get total-staked pool) u10000) (var-get max-pool-size)))
+    )
+        (let (
+            (new-apy (if (> utilization-rate u8000)
+                ;; High utilization: reduce APY
+                (- (get base-apy pool-type) (/ (get base-apy pool-type) u4))
+                ;; Low utilization: increase APY
+                (+ (get base-apy pool-type) (/ (get base-apy pool-type) u4))))
+        )
+            (map-set pools
+                { pool-id: pool-id }
+                (merge pool {
+                    current-apy: new-apy,
+                    last-update-height: block-height
+                })
+            )
+            (var-set last-rebalance-height block-height)
+            (ok true)
+        )
+    )
+)
