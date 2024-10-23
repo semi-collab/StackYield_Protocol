@@ -41,3 +41,19 @@
         is-active: bool
     }
 )
+
+;; Pool data structure
+(define-map pools 
+    { pool-id: uint } 
+    { 
+        type-id: uint,
+        current-apy: uint,
+        total-staked: uint,
+        staker-count: uint,
+        is-active: bool,
+        last-update-height: uint,
+        total-rewards-distributed: uint,
+        strategy-params: (list 10 uint)
+    }
+)
+
