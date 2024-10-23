@@ -95,6 +95,7 @@
 (define-public (set-protocol-fee (new-fee uint))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (<= new-fee u1000) ERR-INVALID-PARAMETER) ;; Max 10% fee
         (var-set protocol-fee-rate new-fee)
         (ok true)
     )
