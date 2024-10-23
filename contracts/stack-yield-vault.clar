@@ -487,25 +487,26 @@
     )
 )
 
-;; Custom absolute value function
-(define-read-only (abs (value int))
-    (if (< value 0)
-        (- 0 value)
-        value
-    )
-)
-
-;; Risk assessment
+;; Risk assessment with uint-based calculations
 (define-read-only (assess-pool-risk (pool-id uint))
     (let (
         (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
         (pool-type (unwrap! (map-get? pool-types { type-id: (get type-id pool) }) ERR-POOL-NOT-FOUND))
     )
-        (ok {
-            base-risk: (get risk-level pool-type),
-            utilization-risk: (/ (* (get total-staked pool) u100) (var-get max-pool-size)),
-            apy-volatility: (abs (int (- (get current-apy pool) (get base-apy pool-type)))),
-            recommended-lock-period: (get min-lock-period pool-type)
-        })
+        ;; Calculate APY volatility using uint math
+        (let (
+            (current-apy (get current-apy pool))
+            (base-apy (get base-apy pool-type))
+            (apy-diff (if (> current-apy base-apy)
+                (- current-apy base-apy)
+                (- base-apy current-apy)))
+        )
+            (ok {
+                base-risk: (get risk-level pool-type),
+                utilization-risk: (/ (* (get total-staked pool) u100) (var-get max-pool-size)),
+                apy-volatility: apy-diff,
+                recommended-lock-period: (get min-lock-period pool-type)
+            })
+        )
     )
 )
