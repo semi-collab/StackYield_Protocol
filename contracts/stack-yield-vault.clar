@@ -57,3 +57,16 @@
     }
 )
 
+;; User positions across pools
+(define-map user-positions
+    { user: principal, pool-id: uint }
+    {
+        staked-amount: uint,
+        pending-rewards: uint,
+        stake-height: uint,
+        lock-until: uint,
+        last-claim-height: uint,
+        boost-multiplier: uint,
+        compound-rewards: bool
+    }
+)
