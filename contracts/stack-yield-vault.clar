@@ -82,3 +82,28 @@
         last-action-height: uint
     }
 )
+
+;; Governance and admin functions
+(define-public (set-contract-owner (new-owner principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (var-set contract-owner new-owner)
+        (ok true)
+    )
+)
+
+(define-public (set-protocol-fee (new-fee uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (var-set protocol-fee-rate new-fee)
+        (ok true)
+    )
+)
+
+(define-public (toggle-emergency-shutdown)
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (var-set emergency-shutdown (not (var-get emergency-shutdown)))
+        (ok true)
+    )
+)
