@@ -234,3 +234,23 @@
         )
     )
 )
+
+;; Advanced reward calculation with compounding effects
+(define-read-only (calculate-rewards (user principal) (pool-id uint))
+    (let (
+        (position (unwrap! (map-get? user-positions { user: user, pool-id: pool-id }) ERR-NO-POSITION))
+        (pool (unwrap! (map-get? pools { pool-id: pool-id }) ERR-POOL-NOT-FOUND))
+        (blocks-staked (- block-height (get last-claim-height position)))
+        (base-amount (get staked-amount position))
+    )
+        (let (
+            (base-rewards (* (* base-amount (get current-apy pool)) blocks-staked))
+            (boosted-rewards (* base-rewards (get boost-multiplier position)))
+            (compounded-rewards (if (get compound-rewards position)
+                (+ boosted-rewards (* boosted-rewards (/ blocks-staked u52560)))
+                boosted-rewards))
+        )
+            (ok (/ compounded-rewards u10000))
+        )
+    )
+)
